@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useAccount, useNetwork } from "wagmi";
+import { useAccount, useChainId } from "wagmi";
 import { fetchBalance } from "@wagmi/core";
 import Image from "next/image";
 
@@ -31,7 +31,7 @@ const popularTokens = {
 
 export default function TokenBalances() {
   const { address } = useAccount();
-  const { chain } = useNetwork();
+  const { chain } = useChainId();
   const [balances, setBalances] = useState([]);
   const [tokens, setTokens] = useState([]);
 
