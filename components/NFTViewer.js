@@ -27,12 +27,18 @@ export default function NFTViewer() {
         const data = await res.json();
 
         const parsed = (data.result || []).map((nft) => {
-          let metadata = {};
-          try {
-            metadata = nft.metadata ? JSON.parse(nft.metadata) : {};
-          } catch (e) {
-            metadata = {};
-          }
+		let metadata = {};
+		try {
+		  if (nft.metadata) {
+			metadata = JSON.parse(nft.metadata);
+		  } else if (nft.token_uri) {
+			const res = await fetch(nft.token_uri);
+			metadata = await res.json();
+		  }
+		} catch (e) {
+		  console.warn("Failed to parse or fetch metadata:", nft.token_uri, e);
+		  metadata = {};
+		}
 
           const image = metadata.image?.startsWith("ipfs://")
             ? metadata.image.replace("ipfs://", "https://ipfs.io/ipfs/")
