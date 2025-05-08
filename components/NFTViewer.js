@@ -2,123 +2,103 @@
 
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
-import { createPublicClient, http } from "viem";
-import { base } from "viem/chains";
-import { erc721ABI } from "wagmi";
 
-const infuraRPC = "https://base-mainnet.infura.io/v3/84e6a231877a49598bc05167fe403466";
-const publicClient = createPublicClient({
-  chain: base,
-  transport: http(infuraRPC),
-});
+const MORALIS_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6ImE2YWU4Y2E2LWNiNWUtNDJmNi1hYjQ5LWUzZWEwZTM5NTI2MSIsIm9yZ0lkIjoiNDQ1NTcxIiwidXNlcklkIjoiNDU4NDM4IiwidHlwZUlkIjoiMDhiYmI4YTgtMzQxYy00YTJhLTk2NGUtN2FlMGZmMzI2ODUxIiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NDY1NDA1MzgsImV4cCI6NDkwMjMwMDUzOH0._O5uiNnyo2sXnJDbre0_9mDklKTmrj90Yn2HXJJnZRk";
 
 export default function NFTViewer() {
   const { address, isConnected } = useAccount();
   const [nfts, setNfts] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const fetchNFTs = async () => {
-    if (!address) return;
-    setLoading(true);
-    try {
-      const response = await fetch(
-        `https://api.basescan.org/api?module=account&action=tokennfttx&address=${address}`
-      );
-      const data = await response.json();
-
-      const seen = new Set();
-      const tokens = [];
-
-      for (const tx of data.result || []) {
-        if (!tx.tokenID || !tx.contractAddress) continue;
-        const key = tx.contractAddress + ":" + tx.tokenID;
-        if (!seen.has(key)) {
-          seen.add(key);
-          tokens.push({ contract: tx.contractAddress, tokenId: tx.tokenID.toString() });
-        }
-      }
-
-      const results = await Promise.all(
-        tokens.map(async ({ contract, tokenId }) => {
-          if (!contract || !tokenId || typeof tokenId !== "string" || tokenId.length === 0) {
-            console.warn("Skipping invalid token input:", contract, tokenId);
-            return null;
+  useEffect(() => {
+    const fetchNFTs = async () => {
+      if (!address) return;
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `https://deep-index.moralis.io/api/v2.2/${address}/nft?chain=base&format=decimal&limit=20`,
+          {
+            headers: {
+              "X-API-Key": MORALIS_API_KEY,
+              accept: "application/json",
+            },
           }
+        );
+        const data = await res.json();
 
-          let tokenURI;
+        const parsed = (data.result || []).map((nft) => {
+          let metadata = {};
           try {
-            tokenURI = await publicClient.readContract({
-              address: contract,
-              abi: erc721ABI,
-              functionName: "tokenURI",
-              args: [tokenId],
-            });
-          } catch (err) {
-            console.warn("tokenURI call failed:", contract, tokenId, err);
-            return null;
+            metadata = nft.metadata ? JSON.parse(nft.metadata) : {};
+          } catch (e) {
+            metadata = {};
           }
 
-          if (!tokenURI || typeof tokenURI !== "string" || tokenURI.length === 0) {
-            console.warn("Invalid tokenURI format:", contract, tokenId, tokenURI);
-            return null;
-          }
-
-          const cleanUri = tokenURI.replace("ipfs://", "https://ipfs.io/ipfs/");
-
-          let metadata;
-          try {
-            const res = await fetch(cleanUri);
-            if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-            metadata = await res.json();
-          } catch (err) {
-            console.warn("Metadata fetch failed:", cleanUri, err);
-            return null;
-          }
+          const image = metadata.image?.startsWith("ipfs://")
+            ? metadata.image.replace("ipfs://", "https://ipfs.io/ipfs/")
+            : metadata.image;
 
           return {
-            tokenId,
-            contract,
-            name: metadata.name || `Token #${tokenId}`,
-            image: metadata.image?.replace("ipfs://", "https://ipfs.io/ipfs/"),
+            tokenId: nft.token_id,
+            name: metadata.name || nft.name || `Token #${nft.token_id}`,
+            image,
           };
-        })
-      );
+        });
 
-      setNfts(results.filter(Boolean));
-    } catch (err) {
-      console.error("Error fetching NFTs from BaseScan:", err);
-    }
-    setLoading(false);
-  };
+        setNfts(parsed);
+      } catch (err) {
+        console.error("Failed to fetch NFTs from Moralis:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  useEffect(() => {
-    if (isConnected) fetchNFTs();
-  }, [isConnected]);
+    fetchNFTs();
+  }, [address]);
+
+  if (!isConnected) {
+    return (
+      <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+        <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
+          NFTs
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400">
+          Connect your wallet to view NFTs.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6">
-      <h2 className="text-xl font-bold mb-4">Your NFTs (Base)</h2>
+    <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+      <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
+        NFTs
+      </h2>
       {loading ? (
-        <p>Loading NFTs...</p>
+        <p className="text-gray-500">Loading NFTs...</p>
       ) : nfts.length === 0 ? (
-        <p>No NFTs found.</p>
+        <p className="text-gray-500">No NFTs found for this wallet.</p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {nfts.map((nft, i) => (
-            <div key={i} className="border rounded p-4 shadow">
+            <div
+              key={i}
+              className="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg shadow"
+            >
               {nft.image ? (
                 <img
                   src={nft.image}
                   alt={nft.name}
-                  className="mb-2 w-full h-40 object-cover rounded-md"
+                  className="w-full h-40 object-cover rounded-md"
                 />
               ) : (
-                <div className="w-full h-40 bg-gray-200 rounded-md flex items-center justify-center text-sm text-gray-500">
+                <div className="w-full h-40 bg-gray-300 dark:bg-gray-600 rounded-md flex items-center justify-center text-sm text-gray-600 dark:text-gray-300">
                   No Image
                 </div>
               )}
-              <h3 className="text-sm font-semibold">{nft.name}</h3>
-              <p className="text-xs text-gray-500 break-all">{nft.contract}</p>
+              <div className="mt-2 text-sm font-medium text-gray-800 dark:text-white">
+                #{nft.tokenId} — {nft.name}
+              </div>
             </div>
           ))}
         </div>
