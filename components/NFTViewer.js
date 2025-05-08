@@ -21,7 +21,9 @@ export default function NFTViewer() {
     if (!address) return;
     setLoading(true);
     try {
-      const response = await fetch(`https://api.basescan.org/api?module=account&action=tokennfttx&address=${address}`);
+      const response = await fetch(
+        `https://api.basescan.org/api?module=account&action=tokennfttx&address=${address}`
+      );
       const data = await response.json();
 
       const seen = new Set();
@@ -37,27 +39,43 @@ export default function NFTViewer() {
 
       const results = await Promise.all(
         tokens.map(async ({ contract, tokenId }) => {
+          let tokenURI;
+
           try {
-            const tokenURI = await publicClient.readContract({
+            tokenURI = await publicClient.readContract({
               address: contract,
               abi: erc721ABI,
               functionName: "tokenURI",
               args: [tokenId],
             });
-
-            const cleanUri = tokenURI.replace("ipfs://", "https://ipfs.io/ipfs/");
-            const metadata = await fetch(cleanUri).then(res => res.json());
-
-            return {
-              tokenId,
-              contract,
-              name: metadata.name || `Token #${tokenId}`,
-              image: metadata.image?.replace("ipfs://", "https://ipfs.io/ipfs/"),
-            };
           } catch (err) {
-            console.warn("Failed to load metadata:", contract, tokenId, err);
+            console.warn("tokenURI call failed:", contract, tokenId, err);
             return null;
           }
+
+          if (!tokenURI || typeof tokenURI !== "string" || tokenURI.length === 0) {
+            console.warn("Invalid tokenURI:", contract, tokenId, tokenURI);
+            return null;
+          }
+
+          const cleanUri = tokenURI.replace("ipfs://", "https://ipfs.io/ipfs/");
+
+          let metadata;
+          try {
+            const res = await fetch(cleanUri);
+            if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+            metadata = await res.json();
+          } catch (err) {
+            console.warn("Failed to fetch metadata:", cleanUri, err);
+            return null;
+          }
+
+          return {
+            tokenId,
+            contract,
+            name: metadata.name || `Token #${tokenId}`,
+            image: metadata.image?.replace("ipfs://", "https://ipfs.io/ipfs/"),
+          };
         })
       );
 
